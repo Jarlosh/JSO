@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using Object = UnityEngine.Object;
+using JIgnore = NagaiTools.JSO.JSOIgnoredTypes;
 
 namespace NagaiTools.JSO
 {
@@ -41,7 +42,8 @@ namespace NagaiTools.JSO
                         float height = EditorGUI.GetPropertyHeight(subProp, null, true) +
                                        EditorGUIUtility.standardVerticalSpacing;
                         totalHeight += height;
-                    } while (prop.NextVisible(false));
+                    } 
+                    while (prop.NextVisible(false));
                 }
 
                 // Add a tiny bit of height if open for the background
@@ -53,14 +55,12 @@ namespace NagaiTools.JSO
 
         const int buttonWidth = 66;
 
-        static readonly List<string> ignoreClassFullNames = new List<string> {"TMPro.TMP_FontAsset"};
-
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
             EditorGUI.BeginProperty(position, label, property);
-            var type = GetFieldType();
+            var type = EditorHelpers.GetFieldType(fieldInfo);
 
-            if (type == null || ignoreClassFullNames.Contains(type.FullName))
+            if (type == null || JIgnore.IsIgnored(type))
             {
                 EditorGUI.PropertyField(position, property, label);
                 EditorGUI.EndProperty();
@@ -69,9 +69,9 @@ namespace NagaiTools.JSO
 
             ScriptableObject propertySO = null;
             if (!property.hasMultipleDifferentValues && property.serializedObject.targetObject != null &&
-                property.serializedObject.targetObject is ScriptableObject)
+                property.serializedObject.targetObject is ScriptableObject pso)
             {
-                propertySO = (ScriptableObject) property.serializedObject.targetObject;
+                propertySO = pso;
             }
 
             var propertyRect = Rect.zero;
@@ -149,26 +149,28 @@ namespace NagaiTools.JSO
                     EditorGUI.indentLevel--;
                 }
             }
-            else
-            {
-                if (GUI.Button(buttonRect, "Create"))
-                {
-                    string selectedAssetPath = "Assets";
-                    if (property.serializedObject.targetObject is MonoBehaviour)
-                    {
-                        MonoScript ms =
-                            MonoScript.FromMonoBehaviour((MonoBehaviour) property.serializedObject.targetObject);
-                        selectedAssetPath = System.IO.Path.GetDirectoryName(AssetDatabase.GetAssetPath(ms));
-                    }
-
-                    property.objectReferenceValue = CreateAssetWithSavePrompt(type, selectedAssetPath);
-                }
-            }
+            else if (GUI.Button(buttonRect, "Create"))
+                OnCreate(property, type);
 
             property.serializedObject.ApplyModifiedProperties();
             EditorGUI.EndProperty();
         }
 
+        private void OnCreate(SerializedProperty property, Type type)
+        {
+            string selectedAssetPath = "Assets";
+            if (property.serializedObject.targetObject is MonoBehaviour)
+            {
+                MonoScript ms =
+                    MonoScript.FromMonoBehaviour((MonoBehaviour) property.serializedObject.targetObject);
+                selectedAssetPath = System.IO.Path.GetDirectoryName(AssetDatabase.GetAssetPath(ms));
+            }
+
+            property.objectReferenceValue = CreateAssetWithSavePrompt(type, selectedAssetPath);
+        }
+
+        #region Temporal commented (unused)
+        /*
         public static T _GUILayout<T>(string label, T objectReferenceValue, ref bool isExpanded)
             where T : ScriptableObject
         {
@@ -239,7 +241,6 @@ namespace NagaiTools.JSO
             EditorGUILayout.EndVertical();
             return objectReferenceValue;
         }
-
         static void DrawScriptableObjectChildFields<T>(T objectReferenceValue) where T : ScriptableObject
         {
             // Draw a background that shows us clearly which fields are part of the ScriptableObject
@@ -329,6 +330,8 @@ namespace NagaiTools.JSO
             return objectReferenceValue;
         }
 
+        */
+        #endregion
         // Creates a new ScriptableObject via the default Save File panel
         static ScriptableObject CreateAssetWithSavePrompt(Type type, string path)
         {
@@ -342,15 +345,6 @@ namespace NagaiTools.JSO
             AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
             EditorGUIUtility.PingObject(asset);
             return asset;
-        }
-
-        Type GetFieldType()
-        {
-            Type type = fieldInfo.FieldType;
-            if (type.IsArray) type = type.GetElementType();
-            else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
-                type = type.GetGenericArguments()[0];
-            return type;
         }
 
         static bool AreAnySubPropertiesVisible(SerializedProperty property)
